@@ -34,7 +34,7 @@ st.caption("Sistema de Controle de Biohacking & Performance | v1.2 BR")
 # --- SIDEBAR (Entrada de Dados) ---
 st.sidebar.header("📝 Registro Diário")
 
-# MUDANÇA AQUI: format="DD/MM/YYYY" para o padrão brasileiro visual
+# Data no padrão brasileiro visual (DD/MM/AAAA)
 data_hoje = st.sidebar.date_input("Data", date.today(), format="DD/MM/YYYY")
 
 st.sidebar.subheader("Fisiologia")
@@ -70,4 +70,25 @@ st.subheader("🤖 Exportar para o Coach (Gemini)")
 st.info("Clique abaixo para gerar o relatório técnico e cole no nosso chat.")
 
 if st.button("Gerar Relatório de Biohacking"):
-    treinos_str = ", ".join(treino_feito) if treino_feito else "
+    # A linha que estava dando erro foi corrigida aqui:
+    treinos_str = ", ".join(treino_feito) if treino_feito else "Descanso Total"
+    
+    # Formata a data para texto (Dia/Mês/Ano)
+    prompt_ia = f"""
+    [RELATÓRIO BIOFLOW OS]
+    Data: {data_hoje.strftime('%d/%m/%Y')}
+    Peso: {peso}kg
+    Treinos Realizados: {treinos_str}
+    Sono: {sono}/10 | Energia: {disposicao}
+    Hidratação: {agua_input} garrafas ({litros:.2f}L)
+    Adesão à Dieta: {dieta_check}
+    
+    Contexto: Usuário (45 anos, 90kg) em protocolo hormonal (Durateston), foco em emagrecimento.
+    Solicitação: Analise os dados acima e sugira ajustes para as próximas 24h.
+    """
+    st.code(prompt_ia, language="text")
+    st.success("Copiado! Agora cole no chat com o Gemini.")
+
+# --- RODAPÉ ---
+st.markdown("---")
+st.markdown("*Desenvolvido por nhatano | Biohacking & AI Engineering*")
