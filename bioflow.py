@@ -1,36 +1,47 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 from streamlit_gsheets import GSheetsConnection
 import altair as alt
+import time
 
-# --- SETUP DA PÁGINA ---
-# Mantemos wide para o desktop, mas o layout abaixo se adapta ao mobile
-st.set_page_config(page_title="BioFlow Mobile", layout="wide", page_icon="🧬")
+# --- SETUP ---
+st.set_page_config(page_title="BioFlow Game", layout="wide", page_icon="🧬")
 
-# --- CSS PARA MOBILE ---
+# --- CSS (Visual de Game) ---
 st.markdown("""
     <style>
-    /* Ajustes para telas pequenas */
     .stApp { background-color: #0e1117; color: #fafafa; }
     
-    /* Botão de envio gigante e fácil de clicar no celular */
-    .stButton>button { 
-        width: 100%;
-        height: 60px;
-        background-color: #00FF7F; 
-        color: black; 
-        border-radius: 12px; 
-        font-size: 18px;
-        font-weight: 800; 
-        border: none;
+    /* Botões de Ação (Água) */
+    div.stButton > button:first-child {
+        background-color: #1E1E1E;
+        color: #00FF7F;
+        border: 1px solid #00FF7F;
+        font-size: 20px;
+        border-radius: 10px;
+    }
+    div.stButton > button:first-child:hover {
+        background-color: #00FF7F;
+        color: black;
     }
     
-    /* Melhorar visualização dos inputs */
-    .stNumberInput input { font-size: 18px; }
+    /* Botão Salvar Principal (Destaque) */
+    .save-btn > button {
+        background-color: #00FF7F !important;
+        color: black !important;
+        height: 60px;
+        font-weight: 800;
+    }
     
-    /* Títulos */
-    h1 { font-size: 24px !important; }
+    /* Score Card */
+    .metric-card {
+        background-color: #1c1f26;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #00FF7F;
+        text-align: center;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -39,136 +50,183 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
     try:
-        df = conn.read(worksheet="Página1", usecols=list(range(13)), ttl=5)
+        df = conn.read(worksheet="Página1", usecols=list(range(14)), ttl=0) # ttl=0 para não ter cache e ver água em tempo real
         return df.dropna(how="all")
     except:
         return pd.DataFrame(columns=[
             'Data', 'Peso', 'Sono', 'Energia', 'Treino', 
             'PA_Sis', 'PA_Dia', 'HRV', 'Agua_L', 
-            'Dieta', 'Shot', 'Colaterais', 'Obs'
+            'Dieta', 'Shot', 'Colaterais', 'Obs', 'BioScore'
         ])
 
 df_bio = load_data()
 
-# --- CABEÇALHO ---
-st.title("🧬 BioFlow Mobile")
-st.caption("Protocolo TRT + HYROX | User: 45y")
+# --- LÓGICA DE JOGO (XP & LEVELLING) ---
+total_logs = len(df_bio)
+nivel = int(total_logs / 7) + 1 # Sobe de nível a cada 7 registros (1 semana)
+prox_nivel = (nivel * 7) - total_logs
+titulos = {1: "Novato", 2: "Iniciado", 3: "Biohacker", 4: "Otimizado", 5: "Elite", 10: "Cyborg"}
+titulo_atual = titulos.get(nivel, "Lenda")
 
-# --- ÁREA DE REGISTRO (AGORA NO CORPO PRINCIPAL, NÃO SIDEBAR) ---
-# Usamos um expander que fica fechado para não poluir, e abre fácil no dedo
-with st.expander("📝 TOQUE AQUI PARA ADICIONAR REGISTRO", expanded=False):
+# --- HEADER GAMIFICADO ---
+c1, c2 = st.columns([3, 1])
+with c1:
+    st.title(f"🧬 BioFlow: Nível {nivel}")
+    st.progress(min((total_logs % 7) / 7, 1.0))
+    st.caption(f"🛡️ Rank: **{titulo_atual}** | Falta {prox_nivel} dias para subir de nível.")
+
+# --- LÓGICA DE ÁGUA INTELIGENTE (SESSION STATE) ---
+# Verifica se já tem registro hoje na planilha para puxar a contagem
+hoje_str = date.today().strftime("%Y-%m-%d")
+dados_hoje = df_bio[df_bio['Data'] == hoje_str]
+
+if 'agua_counter' not in st.session_state:
+    if not dados_hoje.empty:
+        # Recupera o quanto já bebeu hoje (convertendo Litros de volta para Garrafas)
+        litros_salvos = float(dados_hoje.iloc[0]['Agua_L'])
+        st.session_state.agua_counter = int(litros_salvos / 0.887)
+    else:
+        st.session_state.agua_counter = 0
+
+# --- FUNÇÕES DE ÁGUA ---
+def add_water():
+    st.session_state.agua_counter += 1
+def remove_water():
+    if st.session_state.agua_counter > 0:
+        st.session_state.agua_counter -= 1
+
+# --- EXPANDER PRINCIPAL ---
+with st.expander(f"📝 REGISTRO DIÁRIO ({hoje_str})", expanded=True):
     
-    with st.form("entry_form", clear_on_submit=True):
-        st.markdown("### 1. Sinais Vitais")
-        d_col1, d_col2 = st.columns(2)
-        input_data = d_col1.date_input("Data", date.today(), format="DD/MM/YYYY")
+    # --- ÁREA DE ÁGUA (FORA DO FORMULÁRIO PARA INTERATIVIDADE) ---
+    st.markdown("### 💧 Hidratação (Check-in)")
+    col_w1, col_w2, col_w3 = st.columns([1, 2, 1])
+    
+    with col_w1:
+        st.button("➖", on_click=remove_water, use_container_width=True)
+    with col_w3:
+        st.button("➕", on_click=add_water, use_container_width=True)
+    with col_w2:
+        qtd_garrafas = st.session_state.agua_counter
+        total_litros = qtd_garrafas * 0.887
+        meta = 4.0 # Meta de 4 Litros
+        pct = min(total_litros / meta, 1.0)
         
-        # Pega último peso
-        val_peso = float(df_bio['Peso'].iloc[-1]) if not df_bio.empty and 'Peso' in df_bio.columns else 90.0
-        input_peso = d_col2.number_input("Peso (kg)", 70.0, 130.0, val_peso, step=0.1)
+        st.markdown(f"<h3 style='text-align: center; margin: 0;'>{qtd_garrafas} Garrafas</h3>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center; color: #aaa;'>{total_litros:.2f}L / {meta}L</p>", unsafe_allow_html=True)
+        st.progress(pct)
         
-        p_col1, p_col2, p_col3 = st.columns(3)
-        input_pa_sis = p_col1.number_input("Sistólica", 90, 200, 120)
-        input_pa_dia = p_col2.number_input("Diastólica", 50, 120, 80)
-        input_hrv = p_col3.text_input("HRV", placeholder="ms")
+        # Feedback Visual
+        if pct >= 1.0: st.success("🏆 META BATIDA!")
+        elif pct >= 0.5: st.info("👍 Metade do caminho")
 
-        st.markdown("### 2. Rotina")
-        input_treino = st.multiselect("Treino", ["Musculação", "HYROX", "LISS", "Jiu-Jitsu", "OFF"])
-        input_agua = st.slider("Água (Garrafas 887ml)", 0, 8, 4)
-        input_dieta = st.select_slider("Dieta", ["Lixo", "Parcial", "100%"])
+    st.divider()
+
+    # --- FORMULÁRIO GERAL ---
+    with st.form("game_form"):
+        st.markdown("### 📊 Status da Máquina")
         
-        st.markdown("### 3. Recuperação")
-        input_sono = st.slider("Sono (0-10)", 0, 10, 7)
-        input_energia = st.select_slider("Energia", ["Zumbi", "Baixa", "Boa", "Top"])
+        c_bio1, c_bio2 = st.columns(2)
+        # Recupera peso anterior se existir
+        last_peso = float(df_bio['Peso'].iloc[-1]) if not df_bio.empty else 90.0
+        peso = c_bio1.number_input("Peso (kg)", 80.0, 130.0, last_peso, step=0.1)
+        sono = c_bio2.slider("Sono (Noite Passada)", 0, 10, 7)
         
-        c_col1, c_col2 = st.columns([1, 2])
-        input_shot = c_col1.checkbox("💉 Shot?")
-        input_colaterais = c_col2.multiselect("Sintomas", ["Acne", "Libido Baixa", "Irritabilidade", "Dores"])
+        c_p1, c_p2 = st.columns(2)
+        pa_sis = c_p1.number_input("PA Sistólica", 90, 200, 120)
+        pa_dia = c_p2.number_input("PA Diastólica", 50, 120, 80)
         
-        input_obs = st.text_area("Obs:", height=80)
+        st.markdown("### ⚔️ Missões do Dia")
+        treino = st.multiselect("Treino Feito", ["Musculação", "HYROX", "Cardio", "Jiu-Jitsu", "OFF"])
+        dieta = st.select_slider("Qualidade da Dieta", ["Lixo (-20pts)", "Parcial (+10pts)", "Limpa 100% (+30pts)"])
         
-        # Botão Grande Verde
-        btn_submit = st.form_submit_button("💾 SALVAR DADOS")
+        c_h1, c_h2 = st.columns(2)
+        shot = c_h1.checkbox("💉 Shot Durateston")
+        colaterais = c_h2.multiselect("Debuffs (Sintomas)", ["Acne", "Libido Baixa", "Irritabilidade", "Dores"])
         
-        if btn_submit:
-            new_row = pd.DataFrame([{
-                'Data': input_data.strftime("%Y-%m-%d"),
-                'Peso': input_peso,
-                'Sono': input_sono,
-                'Energia': input_energia,
-                'Treino': ", ".join(input_treino) if input_treino else "OFF",
-                'PA_Sis': input_pa_sis,
-                'PA_Dia': input_pa_dia,
-                'HRV': input_hrv,
-                'Agua_L': round(input_agua * 0.887, 2),
-                'Dieta': input_dieta,
-                'Shot': "SIM" if input_shot else "NÃO",
-                'Colaterais': ", ".join(input_colaterais),
-                'Obs': input_obs
+        obs = st.text_area("Diário de Campanha (Obs):", height=80)
+        
+        # --- CÁLCULO DO BIOSCORE (Lógica Secreta) ---
+        score_prev = 0
+        score_prev += sono * 4 # Máx 40
+        if "Limpa" in dieta: score_prev += 30
+        elif "Parcial" in dieta: score_prev += 10
+        else: score_prev -= 10
+        if treino and "OFF" not in treino: score_prev += 20
+        if total_litros >= 3.0: score_prev += 10 # Bonus Hidratação
+        score_prev = max(0, min(100, score_prev)) # Limita entre 0 e 100
+        
+        st.caption(f"Score Estimado do Dia: {score_prev}/100")
+
+        # Botão Salvar
+        submit = st.form_submit_button("✅ SALVAR PROGRESSO")
+        
+        if submit:
+            # Prepara dados
+            new_entry = pd.DataFrame([{
+                'Data': date.today().strftime("%Y-%m-%d"),
+                'Peso': peso,
+                'Sono': sono,
+                'Energia': "Calc", # Simplifiquei
+                'Treino': ", ".join(treino) if treino else "OFF",
+                'PA_Sis': pa_sis,
+                'PA_Dia': pa_dia,
+                'HRV': "-",
+                'Agua_L': total_litros, # Pega do contador lá de cima
+                'Dieta': dieta,
+                'Shot': "SIM" if shot else "NÃO",
+                'Colaterais': ", ".join(colaterais),
+                'Obs': obs,
+                'BioScore': score_prev
             }])
             
+            # Lógica de Update: Se já existe registro hoje, substitui. Se não, cria novo.
+            # Isso permite você ir salvando a água ao longo do dia sem criar linhas duplicadas
             try:
-                updated_df = pd.concat([df_bio, new_row], ignore_index=True)
-                conn.update(worksheet="Página1", data=updated_df)
-                st.success("✅ Salvo!")
+                df_final = df_bio.copy()
+                if not df_final.empty and df_final.iloc[-1]['Data'] == date.today().strftime("%Y-%m-%d"):
+                    df_final.iloc[-1] = new_entry.iloc[0] # Atualiza a última linha
+                    msg = "🔄 Dados de hoje ATUALIZADOS com sucesso!"
+                else:
+                    df_final = pd.concat([df_final, new_entry], ignore_index=True)
+                    msg = "💾 Novo dia REGISTRADO com sucesso!"
+                
+                conn.update(worksheet="Página1", data=df_final)
+                st.success(f"{msg} | BioScore: {score_prev}")
+                time.sleep(1)
                 st.rerun()
+                
             except Exception as e:
                 st.error(f"Erro: {e}")
 
+# --- DASHBOARD DE EVOLUÇÃO ---
 st.divider()
+tab1, tab2 = st.tabs(["🏆 Performance", "🤖 Coach"])
 
-# --- VISUALIZAÇÃO DE DADOS (ABAIXO DO FORMULÁRIO) ---
-tab_dash, tab_ai = st.tabs(["📊 Gráficos", "🤖 IA Coach"])
-
-with tab_dash:
-    if not df_bio.empty:
-        # Métricas em Cards (Ficam empilhados no celular automaticamente)
-        k1, k2, k3 = st.columns(3)
-        last = df_bio.iloc[-1]
-        k1.metric("Peso", f"{last['Peso']}kg")
-        k2.metric("Sono", f"{last['Sono']}/10")
-        k3.metric("PA", f"{last['PA_Sis']}/{last['PA_Dia']}")
-        
-        st.caption("Gire o celular para ver melhor os gráficos")
-        
-        # Gráfico Simplificado para Mobile
-        chart = alt.Chart(df_bio).mark_area(
+with tab1:
+    if 'BioScore' in df_bio.columns and not df_bio.empty:
+        # Gráfico de Score
+        st.markdown("##### Evolução do BioScore (Sua Nota)")
+        chart = alt.Chart(df_bio.tail(14)).mark_area(
             line={'color':'#00FF7F'},
-            color=alt.Gradient(
-                gradient='linear',
-                stops=[alt.GradientStop(color='#00FF7F', offset=0),
-                       alt.GradientStop(color='rgba(0, 255, 127, 0)', offset=1)],
-                x1=1, x2=1, y1=1, y2=0
-            )
+            color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='#00FF7F', offset=0), alt.GradientStop(color='transparent', offset=1)], x1=1, x2=1, y1=1, y2=0)
         ).encode(
-            x=alt.X('Data', axis=alt.Axis(format='%d/%m', labelAngle=-45)),
-            y=alt.Y('Peso', scale=alt.Scale(zero=False)),
-            tooltip=['Data', 'Peso', 'Treino']
-        ).properties(height=300)
-        
+            x='Data',
+            y=alt.Y('BioScore', scale=alt.Scale(domain=[0, 100])),
+            tooltip=['Data', 'BioScore', 'Treino']
+        ).interactive()
         st.altair_chart(chart, use_container_width=True)
-        
-        # Tabela compacta (mostra só o essencial no mobile)
-        st.markdown("#### 🗓️ Últimos Registros")
-        st.dataframe(
-            df_bio[['Data', 'Peso', 'Treino', 'Dieta']].sort_values(by='Data', ascending=False).head(5),
-            hide_index=True,
-            use_container_width=True
-        )
 
-with tab_ai:
-    if st.button("Gerar Análise IA"):
-        if not df_bio.empty:
-            # Usando to_string para evitar dependência do tabulate se der erro, 
-            # ou mantendo to_markdown se tabulate estiver instalado
-            try:
-                recents = df_bio.tail(4).to_markdown()
-            except:
-                recents = df_bio.tail(4).to_string()
-                
-            prompt = f"""
-            [BIOFLOW MOBILE DATA]
-            {recents}
-            Solicitação: Analise tendências curtas de peso x sono x hormônios.
-            """
-            st.code(prompt, language="text")
+with tab2:
+    if st.button("Gerar Análise do Jogo"):
+         recents = df_bio.tail(3).to_markdown() if not df_bio.empty else "Sem dados"
+         prompt = f"""
+         [BIOFLOW GAME DATA]
+         User Level: {nivel} ({titulo_atual})
+         
+         RECENT LOGS:
+         {recents}
+         
+         MISSÃO: Analise o BioScore. Onde o jogador está perdendo pontos? (Sono? Dieta?). Dê missões para subir o score amanhã.
+         """
+         st.code(prompt, language="text")
