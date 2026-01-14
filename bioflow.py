@@ -162,37 +162,47 @@ with st.expander(f"📝 REGISTRO DIÁRIO ({hoje_str})", expanded=True):
         submit = st.form_submit_button("✅ SALVAR PROGRESSO")
         
         if submit:
-            # Prepara dados
+            # LÓGICA DE DIÁRIO INTELIGENTE (ACUMULATIVO)
+            obs_final = obs # Começa com o que você digitou agora
+            
+            # Se já tiver dados hoje, vamos tentar recuperar o diário antigo para não perder
+            if not df_bio.empty and df_bio.iloc[-1]['Data'] == date.today().strftime("%Y-%m-%d"):
+                obs_antiga = str(df_bio.iloc[-1]['Obs'])
+                # Se a obs antiga não for vazia e não for igual a nova (pra não duplicar se clicar 2x)
+                if obs_antiga != "nan" and obs_antiga != "" and obs not in obs_antiga:
+                    time_now = datetime.now().strftime("%H:%M")
+                    obs_final = f"{obs_antiga} | [{time_now}] {obs}"
+
+            # Prepara dados (agora usando o obs_final acumulado)
             new_entry = pd.DataFrame([{
                 'Data': date.today().strftime("%Y-%m-%d"),
                 'Peso': peso,
                 'Sono': sono,
-                'Energia': "Calc", # Simplifiquei
+                'Energia': "Calc", 
                 'Treino': ", ".join(treino) if treino else "OFF",
                 'PA_Sis': pa_sis,
                 'PA_Dia': pa_dia,
                 'HRV': "-",
-                'Agua_L': total_litros, # Pega do contador lá de cima
+                'Agua_L': total_litros, 
                 'Dieta': dieta,
                 'Shot': "SIM" if shot else "NÃO",
                 'Colaterais': ", ".join(colaterais),
-                'Obs': obs,
+                'Obs': obs_final, # <--- AQUI ESTÁ A MÁGICA
                 'BioScore': score_prev
             }])
             
-            # Lógica de Update: Se já existe registro hoje, substitui. Se não, cria novo.
-            # Isso permite você ir salvando a água ao longo do dia sem criar linhas duplicadas
+            # (O resto do código de update continua igual...)
             try:
                 df_final = df_bio.copy()
                 if not df_final.empty and df_final.iloc[-1]['Data'] == date.today().strftime("%Y-%m-%d"):
-                    df_final.iloc[-1] = new_entry.iloc[0] # Atualiza a última linha
-                    msg = "🔄 Dados de hoje ATUALIZADOS com sucesso!"
+                    df_final.iloc[-1] = new_entry.iloc[0] 
+                    msg = "🔄 Diário de hoje ATUALIZADO (Notas adicionadas)!"
                 else:
                     df_final = pd.concat([df_final, new_entry], ignore_index=True)
-                    msg = "💾 Novo dia REGISTRADO com sucesso!"
+                    msg = "💾 Novo dia iniciado!"
                 
                 conn.update(worksheet="Página1", data=df_final)
-                st.success(f"{msg} | BioScore: {score_prev}")
+                st.success(f"{msg}")
                 time.sleep(1)
                 st.rerun()
                 
