@@ -29,7 +29,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("🧬 BioFlow OS")
-st.caption("Sistema de Controle de Biohacking & Performance | v1.0 Cloud")
+st.caption("Sistema de Controle de Biohacking & Performance | v1.1 Multi-Treino")
 
 # --- SIDEBAR (Entrada de Dados) ---
 st.sidebar.header("📝 Registro Diário")
@@ -41,8 +41,11 @@ sono = st.sidebar.slider("Qualidade do Sono (0-10)", 0, 10, 7)
 disposicao = st.sidebar.select_slider("Nível de Energia", options=["Baixo", "Médio", "Alto", "Máximo"])
 
 st.sidebar.subheader("Rotina")
-treino_feito = st.sidebar.selectbox("Treino de Hoje", ["Descanso", "Musculação", "HYROX", "Cardio LISS"])
-agua_input = st.sidebar.number_input("Garrafas (887ml) consumidas", 0, 6, 0)
+# MUDANÇA AQUI: De selectbox para multiselect
+treinos_opcoes = ["Descanso", "Musculação", "HYROX", "Cardio LISS", "Mobilidade", "Jiu-Jitsu"]
+treino_feito = st.sidebar.multiselect("Treinos de Hoje", treinos_opcoes, default=["Musculação"])
+
+agua_input = st.sidebar.number_input("Garrafas (887ml) consumidas", 0, 8, 0)
 dieta_check = st.sidebar.radio("Seguiu a Dieta?", ["Sim, 100%", "Parcial", "Não (Jaquei)"])
 
 st.sidebar.markdown("---")
@@ -50,7 +53,6 @@ if st.sidebar.button("💾 Salvar Registro (Simulação)"):
     st.sidebar.success("Dados registrados na memória temporária!")
 
 # --- DASHBOARD (Visualização) ---
-# Aqui criamos colunas para mostrar os KPIs principais
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric(label="⚖️ Peso", value=f"{peso} kg", delta="-0.5 kg")
@@ -67,11 +69,14 @@ st.subheader("🤖 Exportar para o Coach (Gemini)")
 st.info("Clique abaixo para gerar o relatório técnico e cole no nosso chat.")
 
 if st.button("Gerar Relatório de Biohacking"):
+    # Formata a lista de treinos para texto (ex: "Musculação, Cardio LISS")
+    treinos_str = ", ".join(treino_feito) if treino_feito else "Descanso Total"
+    
     prompt_ia = f"""
     [RELATÓRIO BIOFLOW OS]
     Data: {data_hoje}
     Peso: {peso}kg
-    Treino: {treino_feito}
+    Treinos Realizados: {treinos_str}
     Sono: {sono}/10 | Energia: {disposicao}
     Hidratação: {agua_input} garrafas ({litros:.2f}L)
     Adesão à Dieta: {dieta_check}
