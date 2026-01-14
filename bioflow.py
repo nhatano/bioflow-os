@@ -1,94 +1,163 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date
+from datetime import date
+from streamlit_gsheets import GSheetsConnection
+import altair as alt
 
-# Configuração da Página
-st.set_page_config(page_title="BioFlow OS", layout="centered", page_icon="🧬")
+# --- SETUP DA PÁGINA (VISUAL WIDESCREEN) ---
+st.set_page_config(page_title="BioFlow OS | Cloud", layout="wide", page_icon="🧬")
 
-# Estilo CSS Customizado (Clean & Dark)
+# --- ESTILIZAÇÃO CSS (Dark Mode Premium) ---
 st.markdown("""
     <style>
-    .stButton>button {
-        width: 100%;
-        background-color: #00CC66;
-        color: white;
-        border-radius: 10px;
-        font-weight: bold;
+    /* Cor de Fundo e Texto */
+    .stApp { background-color: #0e1117; color: #fafafa; }
+    
+    /* Botões */
+    .stButton>button { 
+        background-color: #00FF7F; 
+        color: black; 
+        border-radius: 8px; 
+        font-weight: 800; 
+        border: none;
+        transition: 0.3s;
     }
-    .stButton>button:hover {
-        background-color: #00994d;
-        color: white;
-    }
-    .metric-card {
-        background-color: #1E1E1E;
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #00CC66;
-    }
+    .stButton>button:hover { background-color: #00CC66; color: white; transform: scale(1.02); }
+    
+    /* Métricas */
+    div[data-testid="stMetricValue"] { font-size: 24px; color: #00FF7F; }
+    div[data-testid="stMetricLabel"] { font-size: 14px; color: #a0a0a0; }
+    
+    /* Títulos */
+    h1, h2, h3 { color: #00FF7F !important; font-family: 'Helvetica Neue', sans-serif; }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-st.title("🧬 BioFlow OS")
-st.caption("Sistema de Controle de Biohacking & Performance | v1.2 BR")
+# --- CONEXÃO COM GOOGLE SHEETS ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SIDEBAR (Entrada de Dados) ---
-st.sidebar.header("📝 Registro Diário")
+# Função para carregar dados (com cache para performance)
+def load_data():
+    try:
+        # Tenta ler a planilha. Se falhar, retorna vazio.
+        df = conn.read(worksheet="Página1", usecols=list(range(13)), ttl=5)
+        return df.dropna(how="all")
+    except:
+        return pd.DataFrame(columns=[
+            'Data', 'Peso', 'Sono', 'Energia', 'Treino', 
+            'PA_Sis', 'PA_Dia', 'HRV', 'Agua_L', 
+            'Dieta', 'Shot', 'Colaterais', 'Obs'
+        ])
 
-# Data no padrão brasileiro visual (DD/MM/AAAA)
-data_hoje = st.sidebar.date_input("Data", date.today(), format="DD/MM/YYYY")
+df_bio = load_data()
 
-st.sidebar.subheader("Fisiologia")
-peso = st.sidebar.number_input("Peso Atual (kg)", 70.0, 130.0, 90.0, step=0.1)
-sono = st.sidebar.slider("Qualidade do Sono (0-10)", 0, 10, 7)
-disposicao = st.sidebar.select_slider("Nível de Energia", options=["Baixo", "Médio", "Alto", "Máximo"])
-
-st.sidebar.subheader("Rotina")
-treinos_opcoes = ["Descanso", "Musculação", "HYROX", "Cardio LISS", "Mobilidade", "Jiu-Jitsu"]
-treino_feito = st.sidebar.multiselect("Treinos de Hoje", treinos_opcoes, default=["Musculação"])
-
-agua_input = st.sidebar.number_input("Garrafas (887ml) consumidas", 0, 8, 0)
-dieta_check = st.sidebar.radio("Seguiu a Dieta?", ["Sim, 100%", "Parcial", "Não (Jaquei)"])
-
-st.sidebar.markdown("---")
-if st.sidebar.button("💾 Salvar Registro (Simulação)"):
-    st.sidebar.success("Dados registrados na memória temporária!")
-
-# --- DASHBOARD (Visualização) ---
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric(label="⚖️ Peso", value=f"{peso} kg", delta="-0.5 kg")
-with col2:
-    litros = agua_input * 0.887
-    st.metric(label="💧 Hidratação", value=f"{litros:.1f} L", delta=f"{agua_input}/5 Garrafas")
-with col3:
-    st.metric(label="💤 Sono", value=f"{sono}/10", delta="Estável")
+# --- HEADER ---
+col_logo, col_title = st.columns([1, 5])
+with col_title:
+    st.title("BioFlow OS v6.0 [Cloud Native]")
+    st.markdown("**User:** 45y • **Protocolo:** TRT + HYROX • **Status:** Conectado ao Google Drive 🟢")
 
 st.divider()
 
-# --- ÁREA DE EXPORTAÇÃO PARA IA ---
-st.subheader("🤖 Exportar para o Coach (Gemini)")
-st.info("Clique abaixo para gerar o relatório técnico e cole no nosso chat.")
-
-if st.button("Gerar Relatório de Biohacking"):
-    # A linha que estava dando erro foi corrigida aqui:
-    treinos_str = ", ".join(treino_feito) if treino_feito else "Descanso Total"
+# --- SIDEBAR (INPUT) ---
+with st.sidebar:
+    st.header("📝 Registro Diário")
     
-    # Formata a data para texto (Dia/Mês/Ano)
-    prompt_ia = f"""
-    [RELATÓRIO BIOFLOW OS]
-    Data: {data_hoje.strftime('%d/%m/%Y')}
-    Peso: {peso}kg
-    Treinos Realizados: {treinos_str}
-    Sono: {sono}/10 | Energia: {disposicao}
-    Hidratação: {agua_input} garrafas ({litros:.2f}L)
-    Adesão à Dieta: {dieta_check}
-    
-    Contexto: Usuário (45 anos, 90kg) em protocolo hormonal (Durateston), foco em emagrecimento.
-    Solicitação: Analise os dados acima e sugira ajustes para as próximas 24h.
-    """
-    st.code(prompt_ia, language="text")
-    st.success("Copiado! Agora cole no chat com o Gemini.")
+    with st.form("entry_form", clear_on_submit=True):
+        st.caption("Os dados vão direto para sua planilha segura.")
+        
+        # Grupo 1: Biometria
+        st.subheader("1. Biometria & Sinais")
+        input_data = st.date_input("Data", date.today(), format="DD/MM/YYYY")
+        # Tenta pegar o último peso registrado
+        val_peso = float(df_bio['Peso'].iloc[-1]) if not df_bio.empty and 'Peso' in df_bio.columns else 90.0
+        input_peso = st.number_input("Peso (kg)", 70.0, 130.0, val_peso, step=0.1)
+        
+        c1, c2 = st.columns(2)
+        input_pa_sis = c1.number_input("PA Sist (mmHg)", 90, 200, 120)
+        input_pa_dia = c2.number_input("PA Diast (mmHg)", 50, 120, 80)
+        input_hrv = st.text_input("HRV (ms)", placeholder="Ex: 48")
 
-# --- RODAPÉ ---
-st.markdown("---")
-st.markdown("*Desenvolvido por nhatano | Biohacking & AI Engineering*")
+        # Grupo 2: Rotina
+        st.subheader("2. Rotina & Treino")
+        input_treino = st.multiselect("Treinos", ["Musculação", "HYROX", "LISS", "Jiu-Jitsu", "OFF"])
+        input_agua = st.slider("Hidratação (Garrafas 887ml)", 0, 8, 4)
+        input_dieta = st.select_slider("Adesão Dieta", ["Lixo Total", "Parcial", "Limpa 100%"])
+        
+        # Grupo 3: Recuperação
+        st.subheader("3. Sono & Hormônios")
+        input_sono = st.slider("Qualidade Sono", 0, 10, 7)
+        input_energia = st.select_slider("Energia", ["Zumbi", "Baixa", "Boa", "Máquina"])
+        input_shot = st.checkbox("💉 Aplicação Durateston?")
+        input_colaterais = st.multiselect("Sintomas", ["Acne", "Libido Baixa", "Irritabilidade", "Retenção", "Dores"])
+        
+        input_obs = st.text_area("Diário de Bordo", height=100)
+        
+        btn_submit = st.form_submit_button("🚀 ENVIAR DADOS")
+        
+        if btn_submit:
+            # Prepara a nova linha
+            new_row = pd.DataFrame([{
+                'Data': input_data.strftime("%Y-%m-%d"),
+                'Peso': input_peso,
+                'Sono': input_sono,
+                'Energia': input_energia,
+                'Treino': ", ".join(input_treino) if input_treino else "OFF",
+                'PA_Sis': input_pa_sis,
+                'PA_Dia': input_pa_dia,
+                'HRV': input_hrv,
+                'Agua_L': round(input_agua * 0.887, 2),
+                'Dieta': input_dieta,
+                'Shot': "SIM" if input_shot else "NÃO",
+                'Colaterais': ", ".join(input_colaterais),
+                'Obs': input_obs
+            }])
+            
+            # Atualiza a planilha
+            try:
+                updated_df = pd.concat([df_bio, new_row], ignore_index=True)
+                conn.update(worksheet="Página1", data=updated_df)
+                st.success("Salvo no Google Sheets!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
+
+# --- DASHBOARD ---
+tab_dash, tab_data, tab_ai = st.tabs(["📊 Dashboard Visual", "🗃️ Banco de Dados", "🤖 Relatório IA"])
+
+with tab_dash:
+    if df_bio.empty:
+        st.warning("Adicione o primeiro registro na barra lateral para iniciar os gráficos.")
+    else:
+        # Métricas
+        kp1, kp2, kp3 = st.columns(3)
+        last_peso = df_bio['Peso'].iloc[-1]
+        kp1.metric("Peso Atual", f"{last_peso} kg")
+        kp2.metric("Última PA", f"{df_bio['PA_Sis'].iloc[-1]}/{df_bio['PA_Dia'].iloc[-1]}")
+        kp3.metric("Qualidade Sono", f"{df_bio['Sono'].iloc[-1]}/10")
+        
+        st.divider()
+        
+        # Gráficos
+        g1, g2 = st.columns(2)
+        with g1:
+            st.markdown("##### 📉 Evolução de Peso")
+            chart = alt.Chart(df_bio).mark_line(point=True, color='#00FF7F').encode(
+                x='Data', y=alt.Y('Peso', scale=alt.Scale(zero=False)), tooltip=['Data', 'Peso']
+            ).interactive()
+            st.altair_chart(chart, use_container_width=True)
+
+with tab_data:
+    st.dataframe(df_bio, use_container_width=True)
+    st.caption("Dados carregados diretamente do seu Google Sheets.")
+
+with tab_ai:
+    if st.button("Gerar Análise para o Coach"):
+        if not df_bio.empty:
+            recents = df_bio.tail(3).to_markdown()
+            prompt = f"""
+            [BIOFLOW DATA - LAST 3 DAYS]
+            {recents}
+            Solicitação: Analise tendências de sono, peso e sintomas hormonais.
+            """
+            st.code(prompt, language="text")
